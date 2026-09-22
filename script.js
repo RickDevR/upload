@@ -26,6 +26,7 @@ const db = getFirestore(app);
 
 // Global state
 let allUploads = [];
+let stagedFilesQueue = [];
 let activeThreeScene = null;
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -85,17 +86,19 @@ function setupThemeToggle() {
     });
 }
 
-// File Drop Zone & Multi-File handling
+// File Drop Zone & Staging Queue ("Add More" support)
 function setupFileInput() {
     const fileInput = document.getElementById("file-input");
-    const fileLabelText = document.getElementById("file-label-text");
     const dropZone = document.getElementById("drop-zone");
 
-    fileInput.addEventListener("change", () => {
-        if (fileInput.files.length > 0) {
-            const count = fileInput.files.length;
-            const name = count === 1 ? fileInput.files[0].name : `${count} files selected`;
-            fileLabelText.innerHTML = `<i class="fa-solid fa-file-circle-check" style="color: var(--success);"></i> Selected: <strong>${name}</strong>`;
+    fileInput.addEventListener("change", (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length > 0) {
+            files.forEach(file => {
+                stagedFilesQueue.push(file);
+            });
+            updateStagingUI();
+            fileInput.value = ""; // reset input
         }
     });
 
@@ -103,7 +106,43 @@ function setupFileInput() {
     ['dragleave', 'drop'].forEach(name => dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); }));
 }
 
-// Upload Form Handler (Batch Multi-File Support + Tags + Discord)
+function updateStagingUI() {
+    const container = document.getElementById("staging-container");
+    const listEl = document.getElementById("staging-list");
+    const countEl = document.getElementById("staging-count");
+
+    if (stagedFilesQueue.length === 0) {
+        container.style.display = "none";
+        return;
+    }
+
+    container.style.display = "block";
+    countEl.textContent = stagedFilesQueue.length;
+    
+    let html = "";
+    stagedFilesQueue.forEach((file, index) => {
+        const path = file.webkitRelativePath || file.name;
+        html += `
+            <div class="staging-item">
+                <span><i class="fa-solid fa-file"></i> ${escapeHtml(path)}</span>
+                <button type="button" class="action-btn btn-delete" onclick="window.removeStagedItem(${index})" style="width: auto; padding: 2px 6px; font-size: 0.75rem;">Remove</button>
+            </div>
+        `;
+    });
+    listEl.innerHTML = html;
+}
+
+window.removeStagedItem = function(index) {
+    stagedFilesQueue.splice(index, 1);
+    updateStagingUI();
+};
+
+window.clearStaging = function() {
+    stagedFilesQueue = [];
+    updateStagingUI();
+};
+
+// Upload Form Handler: Zipping all staged files/folders into 1 Bundle
 function setupUploadForm() {
     const form = document.getElementById("upload-form");
     const submitBtn = document.getElementById("submit-btn");
@@ -113,16 +152,16 @@ function setupUploadForm() {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
+        if (stagedFilesQueue.length === 0) {
+            showToast("Please select and add files or folders to the bundle queue first.", true);
+            return;
+        }
+
         const uploaderName = document.getElementById("uploader-name").value.trim();
+        const bundleName = document.getElementById("upload-bundle-name").value.trim() || "ProjectFolder";
         const category = document.getElementById("upload-category").value;
         const tagsInput = document.getElementById("upload-tags").value.trim();
         const uploadDesc = document.getElementById("upload-desc").value.trim();
-        const fileInput = document.getElementById("file-input");
-
-        if (fileInput.files.length === 0) {
-            showToast("Please select at least one file.", true);
-            return;
-        }
 
         const tags = tagsInput ? tagsInput.split(',').map(t => t.trim().toLowerCase()).filter(t => t.length > 0) : [];
 
@@ -131,41 +170,55 @@ function setupUploadForm() {
         btnSpinner.style.display = "block";
 
         try {
-            // Process each selected file in the batch
-            for (let i = 0; i < fileInput.files.length; i++) {
-                const file = fileInput.files[i];
-                const fileDataUrl = await readFileAsDataURL(file);
+            // Create a single unified ZIP bundle using JSZip
+            const zip = new JSZip();
+            let totalBytes = 0;
 
-                const uploadPayload = {
-                    uploaderName,
-                    category,
-                    tags,
-                    description: uploadDesc,
-                    fileName: file.name,
-                    fileSize: formatFileSize(file.size),
-                    fileData: fileDataUrl,
-                    likes: 0,
-                    downloads: 0,
-                    comments: [],
-                    createdAt: serverTimestamp()
-                };
-
-                await addDoc(collection(db, "uploads"), uploadPayload);
-
-                if (DISCORD_WEBHOOK_URL && DISCORD_WEBHOOK_URL.trim() !== "") {
-                    await sendToDiscordWebhook(uploadPayload);
-                }
+            for (const file of stagedFilesQueue) {
+                const relativePath = file.webkitRelativePath || file.name;
+                const arrayBuffer = await file.arrayBuffer();
+                zip.file(relativePath, arrayBuffer);
+                totalBytes += file.size;
             }
 
-            showToast("Successfully uploaded batch to database!");
+            // Generate zip file data URL
+            const zipBlob = await zip.generateAsync({ type: "blob" });
+            const zipBase64 = await blobToDataURL(zipBlob);
+            const finalArchiveName = bundleName.endsWith('.zip') ? bundleName : `${bundleName}.zip`;
+
+            const uploadPayload = {
+                uploaderName,
+                category,
+                tags,
+                description: uploadDesc,
+                fileName: finalArchiveName,
+                fileSize: formatFileSize(totalBytes),
+                fileData: zipBase64,
+                itemCount: stagedFilesQueue.length,
+                likes: 0,
+                downloads: 0,
+                comments: [],
+                createdAt: serverTimestamp()
+            };
+
+            // Save single bundle item to Firestore
+            await addDoc(collection(db, "uploads"), uploadPayload);
+
+            // Send Discord notification with manifest
+            if (DISCORD_WEBHOOK_URL && DISCORD_WEBHOOK_URL.trim() !== "") {
+                await sendToDiscordWebhook(uploadPayload, stagedFilesQueue.map(f => f.webkitRelativePath || f.name));
+            }
+
+            showToast("Successfully bundled and uploaded folder to vault!");
             form.reset();
-            document.getElementById("file-label-text").innerHTML = `Drag & drop files here, or <span class="browse-link">browse</span>`;
+            stagedFilesQueue = [];
+            updateStagingUI();
             
             setTimeout(() => document.querySelector('[data-tab="view-tab"]').click(), 1000);
 
         } catch (error) {
-            console.error("Upload error:", error);
-            showToast("Upload failed. Check console.", true);
+            console.error("Bundle upload error:", error);
+            showToast("Failed to create folder bundle. Check console.", true);
         } finally {
             submitBtn.disabled = false;
             btnText.style.display = "inline-flex";
@@ -174,12 +227,12 @@ function setupUploadForm() {
     });
 }
 
-function readFileAsDataURL(file) {
+function blobToDataURL(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = error => reject(error);
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(blob);
     });
 }
 
@@ -190,13 +243,14 @@ function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-async function sendToDiscordWebhook(data) {
+async function sendToDiscordWebhook(data, fileList) {
     try {
+        const fileManifest = fileList.length > 10 ? fileList.slice(0, 10).join('\n') + `\n...and ${fileList.length - 10} more files` : fileList.join('\n');
         await fetch(DISCORD_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                content: `🚀 **New Vault Upload!**\n**Uploader:** ${data.uploaderName}\n**Category:** ${data.category}\n**File:** ${data.fileName} (${data.fileSize})\n**Description:** ${data.description}`
+                content: `📦 **New Folder/Project Bundle Uploaded!**\n**Uploader:** ${data.uploaderName}\n**Bundle Name:** ${data.fileName} (${data.fileSize})\n**Description:** ${data.description}\n**Files Contained (${fileList.length}):**\n\`\`\`text\n${fileManifest}\n\`\`\``
             })
         });
     } catch (err) {
@@ -279,10 +333,11 @@ function renderUploads(items) {
     items.forEach(item => {
         const dateStr = item.createdAt && item.createdAt.toDate ? item.createdAt.toDate().toLocaleString() : "Just now";
         
-        let fileIcon = "fa-file";
-        if (/\.(zip|rar|7z|tar|gz)$/i.test(item.fileName)) fileIcon = "fa-file-zipper";
-        else if (/\.(js|html|css|py|json|txt|md)$/i.test(item.fileName)) fileIcon = "fa-file-code";
-        else if (/\.(obj|fbx|gltf|stl|png|jpg|jpeg|gif)$/i.test(item.fileName)) fileIcon = "fa-cube";
+        let fileIcon = "fa-folder-closed";
+        if (item.category === "Script") fileIcon = "fa-file-code";
+        else if (item.category === "3D Model") fileIcon = "fa-cube";
+        else if (item.category === "Plugin") fileIcon = "fa-puzzle-piece";
+        else if (/\.zip$/i.test(item.fileName)) fileIcon = "fa-file-zipper";
 
         const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="tag-pill">#${escapeHtml(t)}</span>`).join('') : '';
 
@@ -292,7 +347,7 @@ function renderUploads(items) {
             <div>
                 <div class="card-top-row">
                     <div class="upload-author"><i class="fa-solid fa-user-circle"></i> ${escapeHtml(item.uploaderName)}</div>
-                    <span class="category-badge">${escapeHtml(item.category || 'General')}</span>
+                    <span class="category-badge">${escapeHtml(item.category || 'Folder')}</span>
                 </div>
                 <div class="upload-filename"><i class="fa-solid ${fileIcon}"></i> ${escapeHtml(item.fileName)}</div>
                 <div class="upload-desc">${escapeHtml(item.description)}</div>
@@ -306,10 +361,10 @@ function renderUploads(items) {
             <div>
                 <div class="upload-actions">
                     <a href="${item.fileData}" download="${item.fileName}" onclick="window.incrementDownload('${item.id}')" class="action-btn btn-download">
-                        <i class="fa-solid fa-download"></i> Download
+                        <i class="fa-solid fa-download"></i> Download Bundle
                     </a>
                     <button class="action-btn btn-inspect" onclick="window.openDetailsModal('${item.id}')">
-                        <i class="fa-solid fa-circle-info"></i> Inspect
+                        <i class="fa-solid fa-folder-open"></i> Open & Inspect
                     </button>
                     <button class="action-btn btn-like" onclick="window.likeUpload('${item.id}')">
                         <i class="fa-solid fa-heart"></i> ${item.likes || 0}
@@ -317,7 +372,7 @@ function renderUploads(items) {
                 </div>
                 <div class="upload-actions">
                     <button class="action-btn btn-delete" onclick="window.deleteUpload('${item.id}')">
-                        <i class="fa-solid fa-trash-can"></i> Delete Upload
+                        <i class="fa-solid fa-trash-can"></i> Delete Bundle
                     </button>
                 </div>
             </div>
@@ -326,7 +381,7 @@ function renderUploads(items) {
     });
 }
 
-// FEATURE: Detailed Inspector Modal (Archive Explorer, Script Code Viewer, 3D Previewer & Comments)
+// FEATURE: Folder & Bundle Inspector Modal (Browse all files inside folder, view code, extract individual files)
 window.openDetailsModal = async function(docId) {
     const item = allUploads.find(u => u.id === docId);
     if (!item) return;
@@ -336,44 +391,36 @@ window.openDetailsModal = async function(docId) {
     const bodyEl = document.getElementById("details-modal-body");
     const footerEl = document.getElementById("details-modal-footer");
 
-    titleEl.innerHTML = `<i class="fa-solid fa-circle-info"></i> Inspector: ${escapeHtml(item.fileName)}`;
-    bodyEl.innerHTML = `<div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p>Analyzing file content...</p></div>`;
+    titleEl.innerHTML = `<i class="fa-solid fa-folder-open"></i> Inspecting: ${escapeHtml(item.fileName)}`;
+    bodyEl.innerHTML = `<div style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p>Unzipping and scanning folder contents...</p></div>`;
     modal.style.display = "flex";
 
     let contentHtml = `
         <div class="inspector-section">
-            <h4><i class="fa-solid fa-user"></i> Uploader Details</h4>
-            <p><strong>Name:</strong> ${escapeHtml(item.uploaderName)}</p>
+            <h4><i class="fa-solid fa-circle-info"></i> Bundle Overview</h4>
+            <p><strong>Uploader:</strong> ${escapeHtml(item.uploaderName)}</p>
             <p><strong>Category:</strong> ${escapeHtml(item.category)}</p>
             <p><strong>Description:</strong> ${escapeHtml(item.description)}</p>
-            <p><strong>Size:</strong> ${escapeHtml(item.fileSize)}</p>
+            <p><strong>Total Size:</strong> ${escapeHtml(item.fileSize)}</p>
+        </div>
+        <div class="inspector-section">
+            <h4><i class="fa-solid fa-folder-tree"></i> Files & Folders Inside</h4>
+            <div id="archive-files-list">Reading contents...</div>
         </div>
     `;
-
-    const isZip = /\.zip$/i.test(item.fileName);
-    const isTextFile = /\.(js|html|css|txt|json|py|md|xml|csv)$/i.test(item.fileName);
-    const is3DModel = /\.(obj|stl)$/i.test(item.fileName);
-
-    if (isZip) {
-        contentHtml += `<div class="inspector-section"><h4><i class="fa-solid fa-folder-tree"></i> Archive / Folder Contents</h4><div id="archive-files-list">Scanning folder contents...</div></div>`;
-    } else if (isTextFile) {
-        contentHtml += `<div class="inspector-section"><h4><i class="fa-solid fa-code"></i> Script / Code Viewer</h4><pre><code id="inspector-code-preview">Loading text...</code></pre></div>`;
-    } else if (is3DModel) {
-        contentHtml += `<div class="inspector-section"><h4><i class="fa-solid fa-cube"></i> 3D Model WebGL Viewer</h4><div id="model-canvas-container"></div></div>`;
-    }
 
     // Comments Section
     const commentsListHtml = item.comments && item.comments.length > 0 
         ? item.comments.map(c => `<div class="comment-item"><div class="comment-author">${escapeHtml(c.author)}</div><div>${escapeHtml(c.text)}</div></div>`).join('')
-        : `<p style="color: var(--text-muted); font-size: 0.85rem;">No comments yet. Be the first to leave feedback!</p>`;
+        : `<p style="color: var(--text-muted); font-size: 0.85rem;">No comments yet. Leave feedback below!</p>`;
 
     contentHtml += `
         <div class="inspector-section">
-            <h4><i class="fa-solid fa-comments"></i> Community Discussion & Feedback</h4>
+            <h4><i class="fa-solid fa-comments"></i> Community Discussion</h4>
             <div class="comments-list">${commentsListHtml}</div>
             <div class="comment-form">
                 <input type="text" id="comment-author-input" placeholder="Your name..." style="width: 130px;">
-                <input type="text" id="comment-text-input" placeholder="Write a comment or question...">
+                <input type="text" id="comment-text-input" placeholder="Ask a question or leave feedback...">
                 <button class="action-btn btn-download" onclick="window.addComment('${item.id}')" style="width: auto; padding: 0 15px;">Send</button>
             </div>
         </div>
@@ -381,94 +428,71 @@ window.openDetailsModal = async function(docId) {
 
     bodyEl.innerHTML = contentHtml;
     footerEl.innerHTML = `
-        <a href="${item.fileData}" download="${item.fileName}" onclick="window.incrementDownload('${item.id}')" class="action-btn btn-download" style="max-width: 200px;">
-            <i class="fa-solid fa-download"></i> Download File
+        <a href="${item.fileData}" download="${item.fileName}" onclick="window.incrementDownload('${item.id}')" class="action-btn btn-download" style="max-width: 220px;">
+            <i class="fa-solid fa-download"></i> Download Entire Folder
         </a>
     `;
 
-    // Process specialized viewers after render
-    if (isZip) {
-        try {
-            const zip = new JSZip();
-            const base64Data = item.fileData.split(',')[1];
-            const zipContent = await zip.loadAsync(base64Data, { base64: true });
-            let fileListHtml = "";
+    // Parse ZIP Bundle contents using JSZip
+    try {
+        const zip = new JSZip();
+        const base64Data = item.fileData.split(',')[1];
+        const zipContent = await zip.loadAsync(base64Data, { base64: true });
+        let fileListHtml = "";
 
-            let fileNames = Object.keys(zipContent.files);
-            fileNames.forEach(filename => {
-                const zipEntry = zipContent.files[filename];
-                fileListHtml += `
-                    <div class="archive-tree-item">
-                        <span><i class="fa-solid ${zipEntry.dir ? 'fa-folder' : 'fa-file'}"></i> ${escapeHtml(filename)}</span>
-                        ${!zipEntry.dir ? `<button class="action-btn btn-download" style="width:auto; padding:4px 8px;" onclick="window.downloadZipFile('${item.id}', '${filename}')">Extract</button>` : ''}
+        const fileNames = Object.keys(zipContent.files);
+        fileNames.forEach(filename => {
+            const zipEntry = zipContent.files[filename];
+            const isText = /\.(js|html|css|txt|json|py|md|xml|csv)$/i.test(filename);
+
+            fileListHtml += `
+                <div class="archive-tree-item">
+                    <span><i class="fa-solid ${zipEntry.dir ? 'fa-folder' : 'fa-file'}"></i> ${escapeHtml(filename)}</span>
+                    <div class="archive-file-actions">
+                        ${!zipEntry.dir && isText ? `<button class="action-btn btn-inspect" style="width:auto; padding:4px 8px;" onclick="window.previewArchivedFile('${item.id}', '${filename}')">Preview</button>` : ''}
+                        ${!zipEntry.dir ? `<button class="action-btn btn-download" style="width:auto; padding:4px 8px;" onclick="window.downloadArchivedFile('${item.id}', '${filename}')">Download</button>` : ''}
                     </div>
-                `;
-            });
-            document.getElementById("archive-files-list").innerHTML = fileListHtml || "Folder is empty.";
-        } catch (err) {
-            document.getElementById("archive-files-list").innerHTML = "Could not parse archive structure.";
-        }
-    } else if (isTextFile) {
-        try {
-            const base64Content = item.fileData.split(',')[1];
-            const decodedText = decodeURIComponent(escape(atob(base64Content)));
-            document.getElementById("inspector-code-preview").textContent = decodedText;
-        } catch (err) {
-            document.getElementById("inspector-code-preview").textContent = "Error decoding text.";
-        }
-    } else if (is3DModel) {
-        initThreeViewer(item.fileData);
+                </div>
+            `;
+        });
+        document.getElementById("archive-files-list").innerHTML = fileListHtml || "Folder is empty.";
+    } catch (err) {
+        document.getElementById("archive-files-list").innerHTML = "Could not parse archive contents.";
     }
 };
 
 window.closeDetailsModal = function() {
     document.getElementById("details-modal").style.display = "none";
-    if (activeThreeScene) {
-        cancelAnimationFrame(activeThreeScene.animId);
-        activeThreeScene = null;
+};
+
+// Preview individual file inside a folder bundle
+window.previewArchivedFile = async function(docId, filename) {
+    const item = allUploads.find(u => u.id === docId);
+    if (!item) return;
+
+    try {
+        const zip = new JSZip();
+        const base64Data = item.fileData.split(',')[1];
+        const zipContent = await zip.loadAsync(base64Data, { base64: true });
+        const file = zipContent.files[filename];
+        if (file) {
+            const textContent = await file.async("text");
+            const modalBody = document.getElementById("details-modal-body");
+            modalBody.innerHTML = `
+                <div class="inspector-section">
+                    <button class="action-btn btn-inspect" onclick="window.openDetailsModal('${item.id}')" style="width: auto; margin-bottom: 15px;"><i class="fa-solid fa-arrow-left"></i> Back to Folder Tree</button>
+                    <h4><i class="fa-solid fa-code"></i> Live Preview: ${escapeHtml(filename)}</h4>
+                    <pre><code>${escapeHtml(textContent)}</code></pre>
+                </div>
+            `;
+        }
+    } catch (err) {
+        showToast("Failed to preview file.", true);
     }
 };
 
-// Three.js 3D Model Preview Helper
-function initThreeViewer(dataUrl) {
-    const container = document.getElementById("model-canvas-container");
-    if (!container) return;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b0f19);
-
-    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.set(0, 5, 10);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    container.appendChild(renderer.domElement);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(5, 10, 7);
-    scene.add(directionalLight);
-
-    // Placeholder geometric mesh representing the uploaded asset
-    const geometry = new THREE.BoxGeometry(3, 3, 3);
-    const material = new THREE.MeshStandardMaterial({ color: 0x6366f1, roughness: 0.3, metalness: 0.8 });
-    const cube = new THREE.Mesh(geometry, material);
-    scene.add(cube);
-
-    let animId;
-    function animate() {
-        animId = requestAnimationFrame(animate);
-        cube.rotation.x += 0.008;
-        cube.rotation.y += 0.012;
-        renderer.render(scene, camera);
-    }
-    animate();
-    activeThreeScene = { animId };
-}
-
-// Extract individual file from zip archive
-window.downloadZipFile = async function(docId, filename) {
+// Download individual file from inside folder bundle
+window.downloadArchivedFile = async function(docId, filename) {
     const item = allUploads.find(u => u.id === docId);
     if (!item) return;
     try {
@@ -485,14 +509,14 @@ window.downloadZipFile = async function(docId, filename) {
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            showToast(`Extracted ${filename}`);
+            showToast(`Downloaded ${filename.split('/').pop()}`);
         }
     } catch (err) {
         showToast("Failed to extract file.", true);
     }
 };
 
-// Add comment to upload
+// Add comment
 window.addComment = async function(docId) {
     const authorInput = document.getElementById("comment-author-input").value.trim() || "Anonymous";
     const textInput = document.getElementById("comment-text-input").value.trim();
@@ -528,7 +552,7 @@ window.likeUpload = async function(docId) {
     try {
         const docRef = doc(db, "uploads", docId);
         await updateDoc(docRef, { likes: increment(1) });
-        showToast("Liked upload!");
+        showToast("Liked bundle!");
         loadUploadsFromDatabase();
     } catch (err) {
         showToast("Failed to like item.", true);
@@ -537,24 +561,24 @@ window.likeUpload = async function(docId) {
 
 // Direct Delete
 window.deleteUpload = async function(docId) {
-    if (!confirm("Are you sure you want to delete this file from the vault?")) return;
+    if (!confirm("Are you sure you want to delete this bundle from the vault?")) return;
 
     try {
         await deleteDoc(doc(db, "uploads", docId));
-        showToast("Upload deleted successfully.");
+        showToast("Bundle deleted successfully.");
         loadUploadsFromDatabase();
     } catch (error) {
         console.error("Error deleting:", error);
-        showToast("Failed to delete upload.", true);
+        showToast("Failed to delete bundle.", true);
     }
 };
 
-// FEATURE: Export Vault Backup JSON
+// Export Vault Backup JSON
 window.exportVaultBackup = function() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allUploads, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `vault_backup_${Date.now()}.json`);
+    downloadAnchor.setAttribute("download", `vault_bundles_backup_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
