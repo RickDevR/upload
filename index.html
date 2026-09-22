@@ -1,12 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync Pro - Ultimate File Hub</title>
+    <title>VaultSync Pro - Ultimate File & Model Hub</title>
     <link id="favicon" rel="icon" type="image/x-icon" href="icon.png">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- JSZip for inspecting archives/folders -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Three.js for 3D Model previewing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div class="bg-animation">
@@ -21,12 +25,17 @@
                 <i class="fa-solid fa-vault"></i>
                 <span>Vault<span class="highlight">Sync</span> <span class="badge-pro">PRO</span></span>
             </div>
-            <nav class="nav-tabs">
-                <button class="tab-btn active" data-tab="upload-tab">
-                    <i class="fa-solid fa-cloud-arrow-up"></i> Upload
-                </button>
-                <button class="tab-btn" data-tab="view-tab">
-                    <i class="fa-solid fa-layer-group"></i> View Vault
+            <nav class="nav-controls">
+                <div class="nav-tabs">
+                    <button class="tab-btn active" data-tab="upload-tab">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Upload
+                    </button>
+                    <button class="tab-btn" data-tab="view-tab">
+                        <i class="fa-solid fa-layer-group"></i> View Vault
+                    </button>
+                </div>
+                <button id="theme-toggle-btn" class="theme-btn" title="Toggle Theme">
+                    <i class="fa-solid fa-moon"></i>
                 </button>
             </nav>
         </header>
@@ -37,7 +46,7 @@
             <section id="upload-tab" class="tab-content active">
                 <div class="card glass-card">
                     <h2><i class="fa-solid fa-feather"></i> Share to the Community Vault</h2>
-                    <p class="subtitle">Upload scripts, 3D models, archives, or folders with category tagging.</p>
+                    <p class="subtitle">Upload multiple files, folders, 3D models, or scripts with custom tags.</p>
                     
                     <form id="upload-form">
                         <div class="input-group">
@@ -57,21 +66,26 @@
                         </div>
 
                         <div class="input-group">
+                            <label for="upload-tags"><i class="fa-solid fa-hashtag"></i> Tags (comma separated)</label>
+                            <input type="text" id="upload-tags" placeholder="e.g. firebase, threejs, ui, blender">
+                        </div>
+
+                        <div class="input-group">
                             <label for="upload-desc"><i class="fa-solid fa-align-left"></i> Description</label>
                             <textarea id="upload-desc" rows="3" placeholder="Describe your upload..." required></textarea>
                         </div>
 
                         <div class="input-group">
-                            <label><i class="fa-solid fa-file-arrow-up"></i> Select File or Folder Archive</label>
+                            <label><i class="fa-solid fa-file-arrow-up"></i> Select Multiple Files or Folders (.zip, etc.)</label>
                             <div class="file-drop-zone" id="drop-zone">
                                 <i class="fa-solid fa-cloud-arrow-up"></i>
-                                <span id="file-label-text">Drag & drop your file here, or <span class="browse-link">browse</span></span>
-                                <input type="file" id="file-input" required>
+                                <span id="file-label-text">Drag & drop files here, or <span class="browse-link">browse</span></span>
+                                <input type="file" id="file-input" multiple required>
                             </div>
                         </div>
 
                         <button type="submit" id="submit-btn" class="primary-btn">
-                            <span class="btn-text"><i class="fa-solid fa-rocket"></i> Upload to Cloud Storage</span>
+                            <span class="btn-text"><i class="fa-solid fa-rocket"></i> Upload Batch to Vault</span>
                             <div class="spinner" id="btn-spinner" style="display: none;"></div>
                         </button>
                     </form>
@@ -82,7 +96,10 @@
             <section id="view-tab" class="tab-content">
                 <div class="view-header-stats">
                     <div class="stat-pill"><i class="fa-solid fa-file-shield"></i> Total Uploads: <strong id="stat-count">0</strong></div>
-                    <div class="stat-pill"><i class="fa-solid fa-database"></i> Vault Activity: <strong>Active</strong></div>
+                    <div class="stat-pill"><i class="fa-solid fa-database"></i> Database: <strong>Synced</strong></div>
+                    <button class="action-btn btn-backup" onclick="window.exportVaultBackup()" style="margin-left: auto; width: auto; padding: 6px 14px;">
+                        <i class="fa-solid fa-download"></i> Backup Vault JSON
+                    </button>
                 </div>
 
                 <div class="view-header">
@@ -99,11 +116,12 @@
                         <select id="sort-filter" class="styled-select filter-select">
                             <option value="newest">Newest First</option>
                             <option value="likes">Most Liked</option>
+                            <option value="downloads">Most Downloaded</option>
                             <option value="name">File Name (A-Z)</option>
                         </select>
                         <div class="search-box">
                             <i class="fa-solid fa-search"></i>
-                            <input type="text" id="search-uploads" placeholder="Search uploads...">
+                            <input type="text" id="search-uploads" placeholder="Search uploads, tags...">
                         </div>
                     </div>
                 </div>
@@ -122,20 +140,18 @@
         </main>
     </div>
 
-    <!-- PREVIEW MODAL -->
-    <div id="preview-modal" class="modal-overlay" style="display: none;">
+    <!-- DETAILS & INSPECTOR MODAL -->
+    <div id="details-modal" class="modal-overlay" style="display: none;">
         <div class="modal-content glass-card">
             <div class="modal-header">
-                <h3 id="modal-filename"><i class="fa-solid fa-file-code"></i> File Preview</h3>
-                <button class="close-modal-btn" onclick="window.closePreviewModal()"><i class="fa-solid fa-xmark"></i></button>
+                <h3 id="details-modal-title"><i class="fa-solid fa-circle-info"></i> Upload Details & Inspector</h3>
+                <button class="close-modal-btn" onclick="window.closeDetailsModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body">
-                <pre id="preview-code-container"><code id="preview-code-text">Loading content...</code></pre>
+            <div class="modal-body" id="details-modal-body">
+                <!-- Dynamically populated info, code viewer, archive file tree, or 3D canvas -->
             </div>
-            <div class="modal-footer">
-                <button class="action-btn btn-copy" onclick="window.copyPreviewText()">
-                    <i class="fa-solid fa-copy"></i> Copy Text
-                </button>
+            <div class="modal-footer" id="details-modal-footer">
+                <!-- Action buttons -->
             </div>
         </div>
     </div>
