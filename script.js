@@ -6,7 +6,7 @@ import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, i
 // ==========================================
 // ⚙️ CONFIGURATION SETTINGS
 // ==========================================
-const DISCORD_WEBHOOK_URL = ""; // <-- Paste your Discord Webhook URL here if desired
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1552100479360700538/egxNycSpXHaePAWFMlffgWvzgoaDZjVu-mWh6BhNkcazBWryyhvAYhC4vj82aTGhyBiK"; // <-- Paste your Discord Webhook URL here if desired
 
 // Your Firebase Configuration
 const firebaseConfig = {
