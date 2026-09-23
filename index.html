@@ -1,16 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-accent="purple">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultSync Pro - Ultimate Folder & File Hub</title>
+    <title>VaultSync Pro - Apex Ultimate Edition</title>
     <link id="favicon" rel="icon" type="image/x-icon" href="icon.png">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- JSZip for dynamic folder archiving and inspection -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- Three.js for 3D model previewing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div class="bg-animation">
@@ -18,25 +15,59 @@
         <div class="glow-orb orb-2"></div>
     </div>
 
+    <!-- GLOBAL ANNOUNCEMENT BANNER -->
+    <div id="global-announcement-banner" class="announcement-banner" style="display: none;">
+        <i class="fa-solid fa-bullhorn"></i> <span id="announcement-text"></span>
+    </div>
+
+    <!-- GLOBAL LOCKDOWN OVERLAY -->
+    <div id="site-lockdown-overlay" class="lockdown-overlay" style="display: none;">
+        <div class="lockdown-card glass-card">
+            <i class="fa-solid fa-shield-halved fa-beat" style="font-size: 3.5rem; color: var(--danger); margin-bottom: 15px;"></i>
+            <h2>Site Under Maintenance / Lockdown</h2>
+            <p>The vault administrator has temporarily locked down the website. Please check back later.</p>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Header -->
         <header class="app-header">
             <div class="logo">
                 <i class="fa-solid fa-vault"></i>
-                <span>Vault<span class="highlight">Sync</span> <span class="badge-pro">PRO</span></span>
+                <span>Vault<span class="highlight">Sync</span> <span class="badge-pro">APEX</span></span>
             </div>
             <nav class="nav-controls">
                 <div class="nav-tabs">
                     <button class="tab-btn active" data-tab="upload-tab">
-                        <i class="fa-solid fa-cloud-arrow-up"></i> Upload Folder
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Upload
                     </button>
                     <button class="tab-btn" data-tab="view-tab">
                         <i class="fa-solid fa-layer-group"></i> View Vault
                     </button>
+                    <button class="tab-btn" data-tab="chat-tab">
+                        <i class="fa-solid fa-comments"></i> Live Chat
+                    </button>
+                    <button class="tab-btn" data-tab="my-uploads-tab">
+                        <i class="fa-solid fa-user-gear"></i> My Uploads
+                    </button>
+                    <button class="tab-btn creator-only-tab" id="creator-panel-tab" data-tab="creator-panel-tab-content" style="display: none; background: linear-gradient(135deg, #f59e0b, #ef4444); color: white; box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);">
+                        <i class="fa-solid fa-crown fa-bounce"></i> God-Mode Panel
+                    </button>
+                    <button class="tab-btn" data-tab="extensions-tab">
+                        <i class="fa-solid fa-puzzle-piece"></i> Extensions
+                    </button>
                 </div>
-                <button id="theme-toggle-btn" class="theme-btn" title="Toggle Theme">
-                    <i class="fa-solid fa-moon"></i>
-                </button>
+                <div class="header-custom-controls">
+                    <select id="accent-picker" class="styled-select accent-select" title="Color Theme">
+                        <option value="purple">💜 Purple</option>
+                        <option value="cyan">💙 Cyan</option>
+                        <option value="green">💚 Emerald</option>
+                        <option value="orange">🧡 Sunset</option>
+                    </select>
+                    <button id="theme-toggle-btn" class="theme-btn" title="Toggle Light/Dark">
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                </div>
             </nav>
         </header>
 
@@ -44,69 +75,102 @@
         <main class="content-area">
             <!-- TAB 1: UPLOAD -->
             <section id="upload-tab" class="tab-content active">
-                <div class="card glass-card">
-                    <h2><i class="fa-solid fa-folder-tree"></i> Upload Folders & Files as a Bundle</h2>
-                    <p class="subtitle">Drag & drop entire folders or select multiple items. Bundle them together into one unified vault upload.</p>
+                <div class="card glass-card upload-card-wrapper">
+                    <h2><i class="fa-solid fa-cloud-arrow-up"></i> Upload Files, 3D Models & Folders</h2>
+                    <p class="subtitle">Instantly bundle and publish your projects directly into Firestore Database.</p>
                     
                     <form id="upload-form">
-                        <div class="input-group">
-                            <label for="uploader-name"><i class="fa-solid fa-user"></i> Your Name / Handle</label>
-                            <input type="text" id="uploader-name" placeholder="e.g. DeveloperJohn" required>
+                        <div class="form-grid">
+                            <div class="input-group">
+                                <label for="uploader-name"><i class="fa-solid fa-user"></i> Your Name / Handle</label>
+                                <div class="name-input-wrapper">
+                                    <input type="text" id="uploader-name" placeholder="e.g. Rick_Dev (Type !?@ for creator)" required autocomplete="off">
+                                    <div id="live-creator-indicator" class="vfx-creator-badge" style="display: none;">
+                                        <i class="fa-solid fa-crown"></i> <span class="badge-text">CREATOR</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="input-group">
+                                <label for="upload-bundle-name"><i class="fa-solid fa-signature"></i> Item / Bundle Name</label>
+                                <input type="text" id="upload-bundle-name" placeholder="e.g. SciFi_Blender_Model" required>
+                            </div>
                         </div>
 
-                        <div class="input-group">
-                            <label for="upload-bundle-name"><i class="fa-solid fa-signature"></i> Bundle / Folder Name</label>
-                            <input type="text" id="upload-bundle-name" placeholder="e.g. MyWebProjectFolder" required>
+                        <div class="form-grid">
+                            <div class="input-group">
+                                <label for="upload-category"><i class="fa-solid fa-tags"></i> Category</label>
+                                <select id="upload-category" class="styled-select">
+                                    <option value="Script">📜 Script / Code</option>
+                                    <option value="3D Model">🧊 3D Model / Asset (.glb, .obj)</option>
+                                    <option value="Folder / Project">📁 Full Folder / Project</option>
+                                    <option value="Plugin">🔌 Plugin / Extension</option>
+                                    <option value="Archive">📦 Archive (.zip)</option>
+                                    <option value="Other">📁 Other</option>
+                                </select>
+                            </div>
+
+                            <div class="input-group">
+                                <label for="upload-version"><i class="fa-solid fa-code-branch"></i> Version</label>
+                                <input type="text" id="upload-version" value="v1.0" placeholder="e.g. v1.0" required>
+                            </div>
                         </div>
 
-                        <div class="input-group">
-                            <label for="upload-category"><i class="fa-solid fa-tags"></i> Category</label>
-                            <select id="upload-category" class="styled-select">
-                                <option value="Folder / Project">📁 Full Folder / Project</option>
-                                <option value="Script">📜 Script / Code</option>
-                                <option value="3D Model">🧊 3D Model / Asset</option>
-                                <option value="Plugin">🔌 Plugin / Extension</option>
-                                <option value="Archive">📦 Archive (.zip)</option>
-                                <option value="Other">📁 Other</option>
-                            </select>
-                        </div>
-
-                        <div class="input-group">
-                            <label for="upload-tags"><i class="fa-solid fa-hashtag"></i> Tags (comma separated)</label>
-                            <input type="text" id="upload-tags" placeholder="e.g. webproject, firebase, frontend">
+                        <div class="input-group tag-input-wrapper">
+                            <label><i class="fa-solid fa-hashtag"></i> Tags & Keywords</label>
+                            <div id="tag-chips-container" class="tag-chips-container">
+                                <input type="text" id="upload-tags-input" placeholder="Type a tag & press Enter or comma...">
+                            </div>
+                            <div id="tag-dropdown" class="tag-dropdown" style="display: none;"></div>
                         </div>
 
                         <div class="input-group">
                             <label for="upload-desc"><i class="fa-solid fa-align-left"></i> Description</label>
-                            <textarea id="upload-desc" rows="3" placeholder="Describe what is inside this folder or bundle..." required></textarea>
+                            <textarea id="upload-desc" rows="3" placeholder="Describe what is inside this upload..." required></textarea>
                         </div>
 
-                        <!-- DROP ZONE -->
+                        <div class="input-group encryption-box">
+                            <label class="checkbox-label">
+                                <span><i class="fa-solid fa-lock"></i> Encrypted Private Download (Optional)</span>
+                                <input type="checkbox" id="enable-encryption-check" onchange="window.toggleEncryptionInput(this)">
+                            </label>
+                            <input type="password" id="upload-encryption-pass" placeholder="Enter secret download password..." style="display: none; margin-top: 10px;">
+                        </div>
+
+                        <!-- UPLOAD TYPE SWITCHER -->
                         <div class="input-group">
-                            <label><i class="fa-solid fa-file-arrow-up"></i> Drop Folders or Files Here</label>
-                            <div class="file-drop-zone" id="drop-zone">
-                                <i class="fa-solid fa-folder-plus"></i>
-                                <span id="file-label-text">Drag & drop an entire folder or files here, or <span class="browse-link">browse</span></span>
-                                <input type="file" id="file-input" multiple webkitdirectory directory>
-                            </div>
-                        </div>
-
-                        <!-- QUEUE STAGING AREA ("Add More" feature) -->
-                        <div id="staging-container" class="staging-container" style="display: none;">
-                            <div class="staging-header">
-                                <span><i class="fa-solid fa-boxes-stacked"></i> Staged Bundle Queue (<span id="staging-count">0</span> items)</span>
-                                <button type="button" class="action-btn btn-delete" onclick="window.clearStaging()" style="width: auto; padding: 4px 10px;">Clear All</button>
-                            </div>
-                            <div id="staging-list" class="staging-list"></div>
-                            <div class="staging-actions">
-                                <button type="button" class="action-btn btn-inspect" onclick="document.getElementById('file-input').click()">
-                                    <i class="fa-solid fa-plus"></i> Add More Files/Folders
+                            <label><i class="fa-solid fa-folder-tree"></i> Select Upload Type</label>
+                            <div class="sub-nav-bar" style="margin-bottom: 12px;">
+                                <button type="button" class="sub-tab-btn active" id="mode-btn-file" onclick="window.setUploadMode('file')">
+                                    <i class="fa-solid fa-file"></i> Single File / 3D Model
+                                </button>
+                                <button type="button" class="sub-tab-btn" id="mode-btn-folder" onclick="window.setUploadMode('folder')">
+                                    <i class="fa-solid fa-folder-tree"></i> Entire Project Folder
                                 </button>
                             </div>
+
+                            <div id="upload-mode-file-container" class="file-drop-zone">
+                                <i class="fa-solid fa-file-arrow-up"></i>
+                                <span>Drag & drop your file here, or <span class="browse-link">browse</span></span>
+                                <input type="file" id="single-file-input">
+                            </div>
+
+                            <div id="upload-mode-folder-container" class="file-drop-zone" style="display: none;">
+                                <i class="fa-solid fa-folder-plus"></i>
+                                <span>Drag & drop your project folder here, or <span class="browse-link">browse</span></span>
+                                <input type="file" id="folder-file-input" multiple webkitdirectory directory>
+                            </div>
                         </div>
 
-                        <button type="submit" id="submit-btn" class="primary-btn" style="margin-top: 15px;">
-                            <span class="btn-text"><i class="fa-solid fa-rocket"></i> Finish & Upload Bundle</span>
+                        <div id="staging-container" class="staging-container" style="display: none;">
+                            <div class="staging-header">
+                                <span><i class="fa-solid fa-boxes-stacked"></i> Staged Item: <span id="staged-file-name" style="color:var(--accent);">None</span></span>
+                                <button type="button" class="action-btn btn-delete" onclick="window.clearStaging()" style="width: auto; padding: 4px 10px;">Clear</button>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="submit-btn" class="primary-btn" style="margin-top: 25px;">
+                            <span class="btn-text"><i class="fa-solid fa-rocket"></i> Instantly Upload to Database</span>
                             <div class="spinner" id="btn-spinner" style="display: none;"></div>
                         </button>
                     </form>
@@ -116,8 +180,8 @@
             <!-- TAB 2: VIEW UPLOADS -->
             <section id="view-tab" class="tab-content">
                 <div class="view-header-stats">
-                    <div class="stat-pill"><i class="fa-solid fa-file-shield"></i> Total Vault Bundles: <strong id="stat-count">0</strong></div>
-                    <div class="stat-pill"><i class="fa-solid fa-database"></i> Database: <strong style="color: var(--success);">Online</strong></div>
+                    <div class="stat-pill"><i class="fa-solid fa-file-shield"></i> Total Uploads: <strong id="stat-count">0</strong></div>
+                    <div class="stat-pill"><i class="fa-solid fa-bolt"></i> Live Feed: <strong style="color: var(--success);" id="live-ticker-text">Syncing...</strong></div>
                     <button class="action-btn btn-backup" onclick="window.exportVaultBackup()" style="margin-left: auto; width: auto; padding: 6px 14px;">
                         <i class="fa-solid fa-download"></i> Backup JSON
                     </button>
@@ -128,9 +192,9 @@
                     <div class="filter-controls">
                         <select id="category-filter" class="styled-select filter-select">
                             <option value="ALL">All Categories</option>
-                            <option value="Folder / Project">Folders / Projects</option>
                             <option value="Script">Scripts</option>
                             <option value="3D Model">3D Models</option>
+                            <option value="Folder / Project">Folders / Projects</option>
                             <option value="Plugin">Plugins</option>
                             <option value="Archive">Archives</option>
                         </select>
@@ -138,8 +202,13 @@
                             <option value="newest">Newest First</option>
                             <option value="likes">Most Liked</option>
                             <option value="downloads">Most Downloaded</option>
+                            <option value="rating">Top Rated (Stars)</option>
                             <option value="name">Name (A-Z)</option>
                         </select>
+                        <div class="view-layout-toggle">
+                            <button class="action-btn view-layout-btn active" id="layout-grid-btn" onclick="window.setLayoutMode('grid')" title="Grid View"><i class="fa-solid fa-grip"></i></button>
+                            <button class="action-btn view-layout-btn" id="layout-list-btn" onclick="window.setLayoutMode('list')" title="List View"><i class="fa-solid fa-list"></i></button>
+                        </div>
                         <div class="search-box">
                             <i class="fa-solid fa-search"></i>
                             <input type="text" id="search-uploads" placeholder="Search bundles, tags...">
@@ -155,31 +224,201 @@
 
                 <div id="empty-state" class="empty-state" style="display: none;">
                     <i class="fa-solid fa-folder-open"></i>
-                    <p>No bundles uploaded yet. Be the first to share a folder or project!</p>
+                    <p>No public uploads found in the vault.</p>
+                </div>
+            </section>
+
+            <!-- TAB 3: LIVE CHAT TERMINAL -->
+            <section id="chat-tab" class="tab-content">
+                <div class="card glass-card" style="max-width: 900px; display: flex; flex-direction: column; height: 70vh;">
+                    <h2><i class="fa-solid fa-comments"></i> Live Community Terminal & Chat</h2>
+                    <p class="subtitle">Real-time messaging for developers and creators across the globe.</p>
+                    <div id="chat-messages-list" class="chat-messages-container" style="flex: 1; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); border-radius: 12px; padding: 15px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 10px;"></div>
+                    <form id="chat-form" class="comment-form" style="display: flex; gap: 10px;">
+                        <input type="text" id="chat-username-input" placeholder="Your Name..." required style="max-width: 180px;">
+                        <input type="text" id="chat-message-input" placeholder="Type a message or creator command (/announce)..." required style="flex: 1;">
+                        <button type="submit" class="primary-btn" style="width: auto; padding: 0 25px;"><i class="fa-solid fa-paper-plane"></i> Send</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- TAB 4: MY UPLOADS -->
+            <section id="my-uploads-tab" class="tab-content">
+                <div class="card glass-card" style="margin-bottom: 25px;">
+                    <h2><i class="fa-solid fa-user-gear"></i> Creator Dashboard & Karma</h2>
+                    <p class="subtitle">Enter your creator handle to view your level, XP, and manage your uploaded items.</p>
+                    <div class="input-group" style="display: flex; gap: 10px; margin-bottom: 0;">
+                        <input type="text" id="dashboard-handle-input" placeholder="Enter your exact Uploader Name...">
+                        <button class="action-btn btn-download" onclick="window.loadMyUploads()" style="width: auto; padding: 0 20px;">Load My Stats</button>
+                    </div>
+                </div>
+                <div id="my-karma-display" style="margin-bottom: 25px;"></div>
+                <div id="my-uploads-grid" class="uploads-grid"></div>
+                <div id="my-uploads-empty" class="empty-state">
+                    <i class="fa-solid fa-user-slash"></i>
+                    <p>Enter your handle above to view and manage your uploads.</p>
+                </div>
+            </section>
+
+            <!-- TAB 5: GOD-MODE CREATOR PANEL -->
+            <section id="creator-panel-tab-content" class="tab-content">
+                <div class="card glass-card" style="margin-bottom: 25px; border: 1px solid rgba(245, 158, 11, 0.6); box-shadow: 0 0 30px rgba(245, 158, 11, 0.2);">
+                    <h2><i class="fa-solid fa-crown" style="color: #f59e0b;"></i> God-Mode Analytics & Master Panel</h2>
+                    <p class="subtitle">Live database control: Analytics, lockdown toggles, broadcast announcements, and moderation.</p>
+                    
+                    <div class="analytics-metrics-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px;">
+                        <div class="stat-pill" style="padding: 15px; text-align: center;">
+                            <i class="fa-solid fa-download" style="color: var(--primary); font-size: 1.5rem; margin-bottom: 5px;"></i>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">Total Platform Downloads</div>
+                            <strong id="analytics-total-downloads" style="font-size: 1.4rem;">0</strong>
+                        </div>
+                        <div class="stat-pill" style="padding: 15px; text-align: center;">
+                            <i class="fa-solid fa-database" style="color: var(--accent); font-size: 1.5rem; margin-bottom: 5px;"></i>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">Total Database Bundles</div>
+                            <strong id="analytics-total-bundles" style="font-size: 1.4rem;">0</strong>
+                        </div>
+                        <div class="stat-pill" style="padding: 15px; text-align: center;">
+                            <i class="fa-solid fa-star" style="color: #fbbf24; font-size: 1.5rem; margin-bottom: 5px;"></i>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">Total Community Ratings</div>
+                            <strong id="analytics-total-ratings" style="font-size: 1.4rem;">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="creator-control-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px;">
+                        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; border: 1px solid var(--card-border);">
+                            <h4 style="color: var(--danger); margin-bottom: 10px;"><i class="fa-solid fa-lock"></i> Global Site Lockdown</h4>
+                            <button id="lockdown-toggle-btn" class="action-btn btn-delete" onclick="window.toggleSiteLockdown()">Enable Lockdown</button>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; border: 1px solid var(--card-border);">
+                            <h4 style="color: var(--accent); margin-bottom: 10px;"><i class="fa-solid fa-bullhorn"></i> Timed Announcement</h4>
+                            <input type="text" id="announcement-msg-input" placeholder="Announcement message..." style="margin-bottom: 8px; font-size: 0.88rem;">
+                            <div style="display: flex; gap: 8px;">
+                                <select id="announcement-duration-select" class="styled-select" style="font-size: 0.85rem; padding: 6px;">
+                                    <option value="60">1 Min</option>
+                                    <option value="300">5 Mins</option>
+                                    <option value="3600" selected>1 Hour</option>
+                                </select>
+                                <button class="action-btn btn-download" onclick="window.broadcastAnnouncement()" style="width: auto; padding: 0 15px;">Broadcast</button>
+                            </div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; border: 1px solid var(--card-border);">
+                            <h4 style="color: #f59e0b; margin-bottom: 10px;"><i class="fa-solid fa-id-badge"></i> User Tag Manager</h4>
+                            <input type="text" id="target-username-input" placeholder="Username..." style="margin-bottom: 8px; font-size: 0.88rem;">
+                            <div style="display: flex; gap: 8px;">
+                                <button class="action-btn btn-download" onclick="window.modifyUserTag(true)" style="background: #f59e0b; color: #000;">Give Tag</button>
+                                <button class="action-btn btn-delete" onclick="window.modifyUserTag(false)">Remove Tag</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                        <button class="action-btn btn-delete" onclick="window.removeCreatorSession()" style="max-width: 220px; background: rgba(239, 68, 68, 0.2); color: var(--danger);">
+                            <i class="fa-solid fa-user-slash"></i> Revoke My Creator Session
+                        </button>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-database"></i> All Database Uploads (Master View)</h3>
+                <div id="creator-master-grid" class="uploads-grid"></div>
+            </section>
+
+            <!-- TAB 6: CHROME EXTENSIONS -->
+            <section id="extensions-tab" class="tab-content">
+                <div class="sub-nav-bar">
+                    <button class="sub-tab-btn active" data-sub="upload-ext-sub">
+                        <i class="fa-solid fa-puzzle-piece"></i> Upload Extension
+                    </button>
+                    <button class="sub-tab-btn" data-sub="view-ext-sub">
+                        <i class="fa-solid fa-store"></i> Extensions Store (<span id="ext-count">0</span>)
+                    </button>
+                </div>
+
+                <div id="upload-ext-sub" class="sub-tab-content active">
+                    <div class="card glass-card">
+                        <h2><i class="fa-solid fa-puzzle-piece"></i> Share Chrome Extension</h2>
+                        <p class="subtitle">Upload extension folder containing manifest.json.</p>
+                        <form id="extension-upload-form">
+                            <div class="input-group">
+                                <label for="ext-uploader-name"><i class="fa-solid fa-user"></i> Your Name / Handle</label>
+                                <input type="text" id="ext-uploader-name" placeholder="e.g. ExtensionDev" required>
+                            </div>
+                            <div class="input-group">
+                                <label for="ext-desc"><i class="fa-solid fa-align-left"></i> Description & Features</label>
+                                <textarea id="ext-desc" rows="3" placeholder="What does this extension do..." required></textarea>
+                            </div>
+                            <div class="input-group">
+                                <label><i class="fa-solid fa-folder-open"></i> Select Extension Folder</label>
+                                <div class="file-drop-zone" id="ext-drop-zone">
+                                    <i class="fa-solid fa-puzzle-piece"></i>
+                                    <span id="ext-file-label-text">Drag & drop extension folder here, or <span class="browse-link">browse</span></span>
+                                    <input type="file" id="ext-file-input" multiple webkitdirectory directory required>
+                                </div>
+                            </div>
+                            <button type="submit" id="ext-submit-btn" class="primary-btn">
+                                <span class="btn-text"><i class="fa-solid fa-rocket"></i> Publish Extension</span>
+                                <div class="spinner" id="ext-btn-spinner" style="display: none;"></div>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="view-ext-sub" class="sub-tab-content">
+                    <div class="view-header">
+                        <h2><i class="fa-solid fa-store"></i> Community Extensions Store</h2>
+                        <div class="search-box">
+                            <i class="fa-solid fa-search"></i>
+                            <input type="text" id="search-extensions" placeholder="Search extensions...">
+                        </div>
+                    </div>
+                    <div id="ext-loading-spinner" class="feed-status"><i class="fa-solid fa-spinner fa-spin"></i> Loading extensions...</div>
+                    <div id="extensions-grid" class="uploads-grid"></div>
+                    <div id="ext-empty-state" class="empty-state" style="display: none;"><i class="fa-solid fa-puzzle-piece"></i><p>No extensions uploaded yet.</p></div>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- FOLDER & BUNDLE INSPECTOR MODAL -->
+    <!-- DETAILS MODAL -->
     <div id="details-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content glass-card">
+        <div class="modal-content glass-card" style="max-width: 950px;">
             <div class="modal-header">
-                <h3 id="details-modal-title"><i class="fa-solid fa-folder-open"></i> Folder & Bundle Inspector</h3>
+                <h3 id="details-modal-title"><i class="fa-solid fa-folder-open"></i> Inspector</h3>
                 <button class="close-modal-btn" onclick="window.closeDetailsModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-body" id="details-modal-body">
-                <!-- Dynamically populated folder file tree, script preview, or 3D viewer -->
+            <div class="modal-body" id="details-modal-body"></div>
+            <div class="modal-footer" id="details-modal-footer"></div>
+        </div>
+    </div>
+
+    <!-- EDIT UPLOAD MODAL -->
+    <div id="edit-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-card" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-pen-to-square"></i> Edit Upload</h3>
+                <button class="close-modal-btn" onclick="window.closeEditModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="modal-footer" id="details-modal-footer">
-                <!-- Action buttons -->
+            <div class="modal-body">
+                <form id="edit-form">
+                    <input type="hidden" id="edit-doc-id">
+                    <div class="input-group">
+                        <label>Item Name</label>
+                        <input type="text" id="edit-name" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Version</label>
+                        <input type="text" id="edit-version" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Description</label>
+                        <textarea id="edit-desc" rows="3" required></textarea>
+                    </div>
+                    <button type="submit" class="primary-btn" style="margin-top: 15px;"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+                </form>
             </div>
         </div>
     </div>
 
-    <!-- TOAST NOTIFICATION -->
     <div id="toast" class="toast"></div>
-
     <script type="module" src="script.js"></script>
 </body>
 </html>
